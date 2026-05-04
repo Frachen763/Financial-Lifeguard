@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🏊 Financial Lifeguard
 
 A personal finance web application that automatically tracks and categorizes expenses by connecting to your Gmail account and parsing transaction emails.
@@ -210,3 +211,6 @@ This project is licensed under the MIT License.
 - Recharts for beautiful charts
 - Tailwind CSS for styling
 - Lucide for icons
+=======
+# Financial-Lifeguard
+>>>>>>> 3285f1c581d1bf9fc9e14f6760dfbcf66f2de05d

@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
+import TransactionInsights from './components/Transactions/TransactionInsights';
 import Categories from './pages/Categories';
 import Budget from './pages/Budget';
 import Profile from './pages/Profile';
@@ -20,7 +21,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <Router>
+          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Landing />} />
@@ -38,6 +39,7 @@ function App() {
             >
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="transactions" element={<Transactions />} />
+              <Route path="transactions/insights" element={<TransactionInsights />} />
               <Route path="categories" element={<Categories />} />
               <Route path="budget" element={<Budget />} />
               <Route path="profile" element={<Profile />} />

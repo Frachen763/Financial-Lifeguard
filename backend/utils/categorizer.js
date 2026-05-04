@@ -25,7 +25,7 @@ export const defaultCategories = [
     name: 'Shopping',
     icon: '🛍️',
     color: '#8b5cf6',
-    keywords: ['amazon', 'flipkart', 'myntra', 'ajio', 'meesho', 'shopping', 'mall', 'store', 'retail', 'fashion', 'clothing'],
+    keywords: ['amazon', 'flipkart', 'myntra', 'ajio', 'meesho', 'shopping', 'mall', 'store', 'retail', 'fashion', 'clothing', 'ekart', 'bluedart', 'blue dart', 'delhivery', 'dtdc', 'xpressbees', 'ecom express', 'fedex', 'dhl', 'ups', 'courier', 'delivery', 'shipping', 'logistics'],
     isDefault: true,
   },
   {
@@ -79,7 +79,9 @@ export const defaultCategories = [
  * @returns {Object} - Matched category or default miscellaneous category
  */
 export const categorizeTransaction = (merchant, categories) => {
-  if (!merchant) {
+  // If no merchant or merchant is "Unknown", return Miscellaneous
+  if (!merchant || merchant.toLowerCase() === 'unknown' || merchant.toLowerCase().includes('unknown merchant')) {
+    console.log('⚠️ No merchant or unknown merchant, categorizing as Miscellaneous');
     return categories.find(cat => cat.name === 'Miscellaneous') || categories[categories.length - 1];
   }
 
@@ -99,7 +101,181 @@ export const categorizeTransaction = (merchant, categories) => {
   }
 
   // Return miscellaneous if no match found
+  console.log(`⚠️ No category match for merchant "${merchant}", categorizing as Miscellaneous`);
   return categories.find(cat => cat.name === 'Miscellaneous') || categories[categories.length - 1];
+};
+
+/**
+ * Analyze merchant transactions and provide category suggestions for miscellaneous transactions
+ * @param {string} merchant - Merchant name to analyze
+ * @param {string} userId - User ID to fetch user-specific transactions
+ * @param {Array} categories - Available categories
+ * @param {string} excludeTransactionId - Optional transaction ID to exclude from analysis
+ * @returns {Object} - Analysis result with suggestion, confidence, and autoCategorization flag
+ */
+export const analyzeMerchantTransactions = async (merchant, userId, categories, excludeTransactionId = null, startDate = null, endDate = null) => {
+  try {
+    // Import here to avoid circular dependencies
+    const Transaction = (await import('../models/Transaction.js')).default;
+    
+    // Build query to find transactions for this merchant
+    const query = {
+      userId,
+      merchant: { $regex: new RegExp(merchant, 'i') },
+      isManual: { $ne: true } // Exclude manual transactions from pattern analysis
+    };
+    
+    // Add date range filtering if provided
+    if (startDate || endDate) {
+      query.transactionDate = {};
+      if (startDate) query.transactionDate.$gte = new Date(startDate);
+      if (endDate) query.transactionDate.$lte = new Date(endDate);
+    }
+    
+    // Exclude specific transaction ID if provided (useful for new transaction analysis)
+    if (excludeTransactionId) {
+      query._id = { $ne: excludeTransactionId };
+    }
+    
+    const merchantTransactions = await Transaction.find(query).populate('category', 'name');
+
+    console.log(`🔍 Analyzing ${merchantTransactions.length} transactions for merchant: ${merchant}`);
+
+    // If less than 3 previous transactions, no suggestion (as per requirement)
+    if (merchantTransactions.length < 3) {
+      console.log(`❌ No suggestion: ${merchant} has only ${merchantTransactions.length} transactions (need 3+)`);
+      return {
+        hasSuggestion: false,
+        confidence: 0,
+        suggestedCategory: null,
+        autoCategorize: false,
+        totalTransactions: merchantTransactions.length
+      };
+    }
+
+    // Count transactions by category
+    const categoryCounts = {};
+    merchantTransactions.forEach(transaction => {
+      const categoryName = transaction.category?.name || 'Miscellaneous';
+      categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + 1;
+    });
+
+    const totalTransactions = merchantTransactions.length;
+    const sortedCategories = Object.entries(categoryCounts)
+      .sort(([,a], [,b]) => b - a)
+      .map(([category, count]) => ({ category, count }));
+
+    const topCategory = sortedCategories[0];
+    const topCategoryCount = topCategory.count;
+    const topCategoryName = topCategory.category;
+
+    // Rule 2: 5+ transactions with ALL in same category = auto-categorize next transaction
+    // This rule takes precedence over Rule 1
+    if (totalTransactions >= 5 && topCategoryCount === totalTransactions && topCategoryName !== 'Miscellaneous') {
+      const suggestedCategory = categories.find(cat => cat.name === topCategoryName);
+      
+      // Convert to plain object to avoid serialization issues
+      const categoryObject = suggestedCategory ? {
+        _id: suggestedCategory._id.toString(),
+        name: suggestedCategory.name,
+        icon: suggestedCategory.icon,
+        color: suggestedCategory.color
+      } : null;
+      
+      console.log(`🚀 AUTO-CATEGORIZE: ${topCategoryName} appears ${topCategoryCount}/${totalTransactions} times (100% consistency)`);
+      
+      return {
+        hasSuggestion: true,
+        confidence: 100,
+        suggestedCategory: categoryObject,
+        autoCategorize: true, // Auto-categorize next transaction
+        totalTransactions,
+        categoryBreakdown: sortedCategories,
+        message: `Auto-categorizing as ${topCategoryName} based on ${totalTransactions} previous transactions (100% consistency)`
+      };
+    }
+
+    // Rule 1: 3+ transactions with more than half in same category
+    // BUT don't suggest "Miscellaneous" - that defeats the purpose!
+    if (totalTransactions >= 3 && topCategoryCount > totalTransactions / 2 && topCategoryName !== 'Miscellaneous') {
+      const confidence = Math.round((topCategoryCount / totalTransactions) * 100);
+      const suggestedCategory = categories.find(cat => cat.name === topCategoryName);
+      
+      // Convert to plain object to avoid serialization issues
+      const categoryObject = suggestedCategory ? {
+        _id: suggestedCategory._id.toString(),
+        name: suggestedCategory.name,
+        icon: suggestedCategory.icon,
+        color: suggestedCategory.color
+      } : null;
+      
+      console.log(`✅ Suggestion found: ${topCategoryName} appears ${topCategoryCount}/${totalTransactions} times (${confidence}%)`);
+      
+      return {
+        hasSuggestion: true,
+        confidence: confidence,
+        suggestedCategory: categoryObject,
+        autoCategorize: false,
+        totalTransactions,
+        categoryBreakdown: sortedCategories
+      };
+    }
+
+    // No strong pattern found
+    return {
+      hasSuggestion: false,
+      confidence: 0,
+      suggestedCategory: null,
+      autoCategorize: false,
+      totalTransactions,
+      categoryBreakdown: sortedCategories
+    };
+
+  } catch (error) {
+    console.error('❌ Error analyzing merchant transactions:', error);
+    return {
+      hasSuggestion: false,
+      confidence: 0,
+      suggestedCategory: null,
+      autoCategorize: false,
+      totalTransactions: 0,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Enhanced categorization with merchant analysis for miscellaneous transactions
+ * @param {string} merchant - Merchant name
+ * @param {string} userId - User ID
+ * @param {Array} categories - Available categories
+ * @returns {Object} - Category result with potential suggestion
+ */
+export const categorizeWithMerchantAnalysis = async (merchant, userId, categories) => {
+  // First, do basic categorization
+  const basicCategory = categorizeTransaction(merchant, categories);
+  
+  // If it's not miscellaneous, return basic result
+  if (basicCategory.name !== 'Miscellaneous') {
+    return {
+      category: basicCategory,
+      suggestion: null
+    };
+  }
+
+  // If it's miscellaneous, analyze merchant history
+  const analysis = await analyzeMerchantTransactions(merchant, userId, categories);
+  
+  return {
+    category: basicCategory,
+    suggestion: analysis.hasSuggestion ? {
+      category: analysis.suggestedCategory,
+      confidence: analysis.confidence,
+      autoCategorize: analysis.autoCategorize,
+      totalTransactions: analysis.totalTransactions,
+      message: analysis.message
+    } : null
+  };
 };
 
 /**
@@ -111,6 +287,13 @@ export const extractMerchant = (text) => {
   if (!text) return 'Unknown';
 
   const lowerText = text.toLowerCase();
+
+  // Check if this is an account-to-account transfer (no merchant info)
+  // Pattern: "to account *******" or "to account XXXXXXX"
+  if (/to\s+account\s+[\*X]{4,}/i.test(text)) {
+    console.log('⚠️ Account-to-account transfer detected, no merchant info');
+    return 'Unknown';
+  }
 
   // Pattern 1: Merchant name in CAPITALS after VPA
   // Example: "to VPA zomato-order@ptybl ZOMATO LIMITED on 6-11-25"
@@ -187,19 +370,37 @@ export const extractMerchant = (text) => {
 
   // Pattern 6: Fallback - extract meaningful capitalized words
   const words = text.split(/\s+/);
+  const excludedWords = [
+    'UPI', 'INR', 'VIA', 'REF', 'A/C', 'ACC', 'RS', 'ON', 'YOUR', 'TRANSACTION', 
+    'REPORT', 'IF', 'THIS', 'MORE', 'DETAILS', 'ACCOUNT', 'BANK', 'HDFC', 'ICICI',
+    'SBI', 'AXIS', 'KOTAK', 'CUSTOMER', 'DEAR', 'PLEASE', 'CALL', 'WARM', 'REGARDS',
+    'HAS', 'BEEN', 'DEBITED', 'CREDITED', 'FROM', 'TO', 'THE', 'AND', 'FOR',
+    // Add font names to excluded words
+    'HELVETICA', 'ARIAL', 'TIMES', 'CALIBRI', 'VERDANA', 'GEORGIA', 'PALATINO',
+    'GARAMOND', 'BOOKMAN', 'COMIC', 'TREBUCHET', 'IMPACT', 'LUCIDA', 'TAHOMA',
+    'COURIER', 'OPTIMA', 'FUTURA', 'BASKERVILLE', 'ROCKWELL'
+  ];
+  
   const capitalizedWords = words.filter(word => 
     /^[A-Z]/.test(word) && 
     word.length > 2 && 
-    !['UPI', 'INR', 'VIA', 'REF', 'A/C', 'ACC', 'RS', 'ON', 'YOUR', 'TRANSACTION', 'REPORT', 'IF', 'THIS'].includes(word.toUpperCase()) &&
-    !/^\d/.test(word) // Not starting with number
+    !excludedWords.includes(word.toUpperCase()) &&
+    !/^\d/.test(word) && // Not starting with number
+    !/^[\*X]{2,}/.test(word) && // Not masked account numbers
+    !/^(font|typeface|style|size|color|weight)$/i.test(word) // Not typography terms
   );
   
   if (capitalizedWords.length > 0) {
     // Take first 2-3 meaningful words
-    return capitalizedWords.slice(0, Math.min(3, capitalizedWords.length)).join(' ');
+    const extracted = capitalizedWords.slice(0, Math.min(3, capitalizedWords.length)).join(' ');
+    // Verify it's not just common phrases
+    if (!/(more details|transaction reference|upi reference)/i.test(extracted)) {
+      return extracted;
+    }
   }
 
-  return 'Unknown Merchant';
+  console.log('⚠️ No merchant name found in text, returning Unknown');
+  return 'Unknown';
 };
 
 /**
@@ -211,6 +412,22 @@ const cleanMerchantName = (merchant) => {
   if (!merchant) return 'Unknown';
 
   let cleaned = merchant.trim();
+
+  // Filter out font names and typography terms
+  const fontNames = [
+    'helvetica', 'arial', 'times new roman', 'calibri', 'verdana', 'georgia', 
+    'palatino', 'garamond', 'bookman', 'comic sans ms', 'trebuchet ms', 
+    'arial black', 'impact', 'lucida console', 'tahoma', 'courier new',
+    'optima', 'futura', 'baskerville', 'rockwell', 'courier'
+  ];
+  
+  const lowerCleaned = cleaned.toLowerCase();
+  for (const font of fontNames) {
+    if (lowerCleaned.includes(font)) {
+      console.log(`🚫 Filtering out font name: ${cleaned}`);
+      return 'Unknown Merchant';
+    }
+  }
 
   // Remove common noise words and phrases
   cleaned = cleaned.replace(/\b(report|if|this|your|transaction|on)\b/gi, '');

@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  gmailEmail: {
+    type: String,
+    default: '',
+  },
   gmailTokens: {
     access_token: String,
     refresh_token: String,
@@ -56,6 +60,29 @@ const userSchema = new mongoose.Schema({
     currency: {
       type: String,
       default: 'INR',
+    },
+  },
+  onboardingCompleted: {
+    type: Boolean,
+    default: false,
+  },
+  financialProfile: {
+    occupation: {
+      type: String,
+      enum: ['Student', 'Employee', 'Self-Employed'],
+    },
+    country: {
+      type: String,
+    },
+    state: {
+      type: String,
+    },
+    city: {
+      type: String,
+    },
+    monthlyIncome: {
+      type: Number,
+      min: 0,
     },
   },
   createdAt: {

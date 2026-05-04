@@ -20,6 +20,22 @@ const transactionSchema = new mongoose.Schema({
     required: [true, 'Merchant name is required'],
     trim: true,
   },
+  accountNumber: {
+    type: String,
+    trim: true,
+    index: true,
+    // Last 3-4 digits of account number (e.g., "0633", "5830")
+  },
+  accountName: {
+    type: String,
+    trim: true,
+    // Optional friendly name for the account (e.g., "HDFC Savings", "ICICI Credit Card")
+  },
+  bankName: {
+    type: String,
+    trim: true,
+    // Extracted bank name (e.g., "HDFC Bank", "ICICI Bank")
+  },
   description: {
     type: String,
     trim: true,
@@ -27,7 +43,7 @@ const transactionSchema = new mongoose.Schema({
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
-    required: true,
+    required: false,
   },
   transactionDate: {
     type: Date,
@@ -66,6 +82,30 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     lowercase: true,
   }],
+  categorySuggestion: {
+    suggestedCategory: {
+      _id: String,
+      name: String,
+      icon: String,
+      color: String
+    },
+    confidence: {
+      type: Number,
+      min: 0,
+      max: 100
+    },
+    autoCategorize: {
+      type: Boolean,
+      default: false
+    },
+    totalTransactions: {
+      type: Number,
+      min: 0
+    },
+    message: {
+      type: String
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -78,6 +118,8 @@ const transactionSchema = new mongoose.Schema({
 transactionSchema.index({ userId: 1, transactionDate: -1 });
 transactionSchema.index({ userId: 1, category: 1 });
 transactionSchema.index({ userId: 1, merchant: 1 });
+transactionSchema.index({ userId: 1, accountNumber: 1 });
+transactionSchema.index({ userId: 1, accountNumber: 1, transactionDate: -1 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 

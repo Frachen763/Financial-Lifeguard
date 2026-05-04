@@ -84,8 +84,8 @@ export const fetchTransactionEmails = async (tokens, lastSyncDate = null) => {
     const gmail = google.gmail({ version: 'v1', auth });
     console.log('✅ Gmail API client initialized');
 
-    // Build query for transaction-related emails
-    let query = 'subject:(transaction OR payment OR debited OR credited OR UPI OR spent OR purchase OR order)';
+    // Build query for transaction-related emails - more comprehensive
+    let query = 'subject:(transaction OR payment OR debited OR credited OR UPI OR spent OR purchase OR order OR paid OR received OR transferred OR withdrawn OR charged OR refunded OR cashback OR Rs OR Rs. OR ₹ OR amount OR debit OR credit)';
     
     // Add date filter if lastSyncDate is provided
     if (lastSyncDate) {
@@ -106,7 +106,7 @@ export const fetchTransactionEmails = async (tokens, lastSyncDate = null) => {
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
-      maxResults: 100,
+      maxResults: 500,
     });
 
     const messages = response.data.messages || [];

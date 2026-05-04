@@ -1,6 +1,7 @@
 import express from 'express';
 import Budget from '../models/Budget.js';
 import Transaction from '../models/Transaction.js';
+import Category from '../models/Category.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -159,12 +160,84 @@ router.get('/:id', protect, async (req, res) => {
 });
 
 // @route   POST /api/budget
-// @desc    Create or update budget
+// @desc    Create or update budget(s) - supports both single and multiple budgets
 // @access  Private
 router.post('/', protect, async (req, res) => {
   try {
-    const { category, amount, period = 'monthly', alertThreshold = 80 } = req.body;
+    console.log('🎯 POST /api/budget called');
+    console.log('📝 Request body:', req.body);
+    console.log('👤 User ID:', req.user._id);
+    
+    const { category, amount, period = 'monthly', alertThreshold = 80, categories, total_budget, month, is_active } = req.body;
 
+    // Handle multiple budgets creation (from frontend budget page)
+    if (categories && Array.isArray(categories)) {
+      console.log('📋 Processing categories:', categories);
+      
+      // Get or create categories
+      const budgetPromises = categories.map(async (catData) => {
+        let categoryDoc = await Category.findOne({ name: catData.name, userId: null });
+        
+        if (!categoryDoc) {
+          categoryDoc = await Category.create({
+            name: catData.name,
+            icon: 'wallet',
+            color: '#6366f1',
+            isDefault: true,
+            userId: null
+          });
+        }
+
+        // Calculate period dates
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        // Check if budget already exists for this category and period
+        const existingBudget = await Budget.findOne({
+          userId: req.user._id,
+          category: categoryDoc._id,
+          period,
+          isActive: true,
+        });
+
+        if (existingBudget) {
+          // Update existing budget
+          existingBudget.amount = catData.allocated_amount;
+          existingBudget.alertThreshold = alertThreshold;
+          existingBudget.startDate = startDate;
+          existingBudget.endDate = endDate;
+          return await existingBudget.save();
+        } else {
+          // Create new budget
+          return await Budget.create({
+            userId: req.user._id,
+            category: categoryDoc._id,
+            amount: catData.allocated_amount,
+            period,
+            alertThreshold,
+            startDate,
+            endDate,
+            isActive: true,
+          });
+        }
+      });
+
+      const budgets = await Promise.all(budgetPromises);
+      
+      // Populate categories for response
+      const populatedBudgets = await Budget.find({
+        _id: { $in: budgets.map(b => b._id) }
+      }).populate('category', 'name icon color');
+
+      console.log('✅ Successfully created/updated budgets:', populatedBudgets.length);
+      return res.status(201).json({
+        success: true,
+        data: populatedBudgets,
+      });
+    }
+
+    // Handle single budget creation (original logic)
     if (!category || !amount) {
       return res.status(400).json({
         success: false,
@@ -235,10 +308,31 @@ router.post('/', protect, async (req, res) => {
       data: populatedBudget,
     });
   } catch (error) {
-    console.error('Create/update budget error:', error);
+    console.error('❌ Create/update budget error:', error);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Handle specific validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors,
+      });
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget already exists for this category and period',
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Failed to create/update budget',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });

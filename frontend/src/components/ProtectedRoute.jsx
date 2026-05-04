@@ -9,7 +9,12 @@ const ProtectedRoute = ({ children }) => {
     return <Loading />;
   }
 
-  if (!isAuthenticated) {
+  // Check if there's an OAuth token in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasToken = urlParams.has('token');
+
+  // If not authenticated but has OAuth token, allow access to let Dashboard handle the token
+  if (!isAuthenticated && !hasToken) {
     return <Navigate to="/login" replace />;
   }
 

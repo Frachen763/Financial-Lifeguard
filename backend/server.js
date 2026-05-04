@@ -12,6 +12,10 @@ import authRoutes from './routes/auth.js';
 import transactionRoutes from './routes/transactions.js';
 import categoryRoutes from './routes/categories.js';
 import budgetRoutes from './routes/budget.js';
+import transactionInsightsRoutes from './routes/transactionInsights.js';
+import onboardingRoutes from './routes/onboarding.js';
+import merchantRoutes from './routes/merchants.js';
+import budgetSuggestionsRoutes from './routes/budgetSuggestions.js';
 
 // Load environment variables
 dotenv.config();
@@ -47,14 +51,14 @@ app.use(
 // Rate limiting - more permissive for development
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute window
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 1000 requests per minute in dev, 100 in prod
+  max: process.env.NODE_ENV === 'production' ? 100 : 5000, // 5000 requests per minute in dev, 100 in prod
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
   // Skip rate limiting for certain routes if needed
   skip: (req) => {
-    // Don't rate limit health checks
-    return req.path === '/api/health';
+    // Don't rate limit health checks or local development
+    return req.path === '/api/health' || process.env.NODE_ENV !== 'production';
   },
 });
 
@@ -72,6 +76,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/budget', budgetRoutes);
+app.use('/api/insights', transactionInsightsRoutes);
+app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/merchants', merchantRoutes);
+app.use('/api/budget-suggestions', budgetSuggestionsRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
